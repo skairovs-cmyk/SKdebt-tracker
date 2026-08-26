@@ -46,6 +46,10 @@ window.closeModal = function(id) {
   document.getElementById(id).classList.add('hidden');
 };
 
+function icon(name) {
+  return `<svg class="ui-icon" aria-hidden="true"><use href="#icon-${name}"></use></svg>`;
+}
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
@@ -497,12 +501,12 @@ function renderRecords() {
     
     tdActions.innerHTML = `
       <div class="row-actions">
-        <button class="btn-row-action" title="Списать / Внести платеж" onclick="openDeductModal('${rec.id}')" ${deductDisabled}>💸</button>
+        <button class="btn-row-action" title="Списать / Внести платеж" aria-label="Списать / Внести платеж" onclick="openDeductModal('${rec.id}')" ${deductDisabled}>${icon('coin')}</button>
         <button class="btn-row-action" title="Редактировать" onclick="openEditRecordModal('${rec.id}')">
-          ✎
+          ${icon('edit')}
         </button>
         <button class="btn-row-action delete" title="Удалить" onclick="deleteRecord('${rec.id}')">
-          ✕
+          ${icon('trash')}
         </button>
       </div>
     `;
@@ -1026,7 +1030,9 @@ window.openHistoryModal = function() {
         const a = document.createElement('a');
         a.href = tx.proofUrl;
         a.target = '_blank';
-        a.textContent = '🔗';
+        a.className = 'proof-link';
+        a.title = 'Открыть доказательство';
+        a.innerHTML = icon('paperclip');
         tdProof.appendChild(a);
       } else {
         tdProof.textContent = '—';
@@ -1034,7 +1040,7 @@ window.openHistoryModal = function() {
       tr.appendChild(tdProof);
       // Actions column with delete button
       const tdActions = document.createElement('td');
-      tdActions.innerHTML = `<button class="btn-row-action delete" title="Удалить" onclick="deleteHistoryRow(this)">✕</button>`;
+      tdActions.innerHTML = `<button class="btn-row-action delete" title="Удалить" aria-label="Удалить" onclick="deleteHistoryRow(this)">${icon('trash')}</button>`;
       tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
@@ -1225,12 +1231,12 @@ function renderIncomes() {
     tdActions.style.textAlign = 'center';
     tdActions.innerHTML = `
 <div class="row-actions">
-          <button class="btn-row-action" title="Добавить доказательство" onclick="openIncomeProofModal('${inc.id}')">📎</button>
+          <button class="btn-row-action" title="Добавить доказательство" aria-label="Добавить доказательство" onclick="openIncomeProofModal('${inc.id}')">${icon('paperclip')}</button>
           <button class="btn-row-action" title="Редактировать" onclick="openEditIncomeModal('${inc.id}')">
-            ✎
+            ${icon('edit')}
           </button>
           <button class="btn-row-action delete" title="Удалить" onclick="deleteIncome('${inc.id}')">
-            ✕
+            ${icon('trash')}
           </button>
         </div>
     `;
