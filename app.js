@@ -56,12 +56,41 @@ function icon(name) {
 }
 
 const DEFAULT_DESC_SORT_KEYS = new Set(['amount', 'balance', 'initialAmount', 'date', 'takenDate', 'closedDate', 'proof']);
-const RECORD_TYPE_ORDER = { 'my-debt': 0, 'debt-to-me': 1, 'regular': 2 };
+const RECORD_TYPE_LABELS = {
+  'my-debt': 'Мой долг',
+  'debt-to-me': 'Долг мне',
+  'regular': 'Регулярное обязательство'
+};
 const STATUS_ORDER = { 'Active': 0, 'Closed': 1 };
 const INCOME_FREQUENCY_ORDER = { 'monthly': 0, 'weekly': 1, 'once': 2 };
 
 function getDefaultSortDirection(key) {
   return DEFAULT_DESC_SORT_KEYS.has(key) ? 'desc' : 'asc';
+}
+
+function getRecordTypeMeta(type) {
+  if (type === 'debt-to-me') {
+    return { label: RECORD_TYPE_LABELS['debt-to-me'], className: 'badge-debt-to-me' };
+  }
+
+  if (type === 'regular') {
+    return { label: RECORD_TYPE_LABELS.regular, className: 'badge-regular' };
+  }
+
+  return { label: RECORD_TYPE_LABELS['my-debt'], className: 'badge-my-debt' };
+}
+
+function getDefaultRecordTypeLabel(type) {
+  return RECORD_TYPE_LABELS[type] || RECORD_TYPE_LABELS['my-debt'];
+}
+
+function getRecordTypeDisplayLabel(record) {
+  const customLabel = String(record?.typeLabel ?? '').trim();
+  if (customLabel) {
+    return customLabel;
+  }
+
+  return getDefaultRecordTypeLabel(record?.type);
 }
 
 function normalizeTextSort(value) {
@@ -103,7 +132,7 @@ function getRecordColumnType(key) {
 function getRecordSortValue(record, key) {
   if (key === 'name') return { empty: !record.name, value: normalizeTextSort(record.name) };
   if (key === 'type') {
-    return { empty: false, value: RECORD_TYPE_ORDER[record.type] ?? 99 };
+    return { empty: !getRecordTypeDisplayLabel(record), value: normalizeTextSort(getRecordTypeDisplayLabel(record)) };
   }
   if (key === 'initialAmount') {
     return { empty: record.initialAmount === undefined || record.initialAmount === null || record.initialAmount === '', value: Number(record.initialAmount) || 0 };
@@ -664,15 +693,21 @@ function renderRecords() {
 
     // 2. Type
     const tdType = document.createElement('td');
-    let typeBadge = '';
-    if (rec.type === 'my-debt') {
-      typeBadge = '<span class="badge badge-my-debt">Мой долг</span>';
-    } else if (rec.type === 'debt-to-me') {
-      typeBadge = '<span class="badge badge-debt-to-me">Долг мне</span>';
-    } else {
-      typeBadge = '<span class="badge badge-regular">Регулярное</span>';
-    }
-    tdType.innerHTML = typeBadge;
+    const typeStack = document.createElement('div');
+    typeStack.className = 'record-type-stack';
+
+    const typeLabel = document.createElement('div');
+    typeLabel.className = 'record-type-name';
+    typeLabel.textContent = getRecordTypeDisplayLabel(rec);
+    typeStack.appendChild(typeLabel);
+
+    const typeMeta = getRecordTypeMeta(rec.type);
+    const typeBadge = document.createElement('span');
+    typeBadge.className = `badge ${typeMeta.className}`;
+    typeBadge.textContent = typeMeta.label;
+    typeStack.appendChild(typeBadge);
+
+    tdType.appendChild(typeStack);
     tr.appendChild(tdType);
 
     // 3. Initial Sum
@@ -876,6 +911,8 @@ function setupUIEventListeners() {
     document.getElementById('record-id').value = '';
     document.getElementById('record-modal-title').textContent = 'Добавить обязательство';
     document.getElementById('record-form').reset();
+    document.getElementById('record-type').value = 'my-debt';
+    document.getElementById('record-type-label').value = '';
     document.getElementById('record-taken-date').value = '';
     document.getElementById('record-closed-date').value = '';
     document.getElementById('balance-group').classList.remove('hidden');
@@ -891,6 +928,8 @@ function setupUIEventListeners() {
     const id = document.getElementById('record-id').value;
     const name = document.getElementById('record-name').value.trim();
     const type = document.getElementById('record-type').value;
+    const typeLabelInput = document.getElementById('record-type-label').value.trim();
+    const typeLabel = typeLabelInput || getDefaultRecordTypeLabel(type);
     const initialAmount = Number(document.getElementById('record-initial').value);
     
     // Balance logic: on Add, if empty, set equal to initialAmount.
@@ -905,6 +944,7 @@ function setupUIEventListeners() {
     const recordData = {
       name,
       type,
+      typeLabel,
       initialAmount,
       balance,
       status: balance === 0 ? 'Closed' : 'Active',
@@ -1121,6 +1161,7 @@ window.openEditRecordModal = function(id) {
   
   document.getElementById('record-name').value = record.name;
   document.getElementById('record-type').value = record.type;
+  document.getElementById('record-type-label').value = getRecordTypeDisplayLabel(record);
   document.getElementById('record-initial').value = record.initialAmount;
   
   // Show and populate balance

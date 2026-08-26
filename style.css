@@ -181,6 +181,14 @@ body::before {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
+.form-hint {
+  display: block;
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 /* Button System */
 .btn {
   display: inline-flex;
@@ -618,6 +626,18 @@ tr:hover td {
   background-color: var(--primary-bg);
   color: var(--primary);
   border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.record-type-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.record-type-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
 }
 
 .badge-status-active {

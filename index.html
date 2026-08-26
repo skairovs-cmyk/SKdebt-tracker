@@ -358,6 +358,26 @@
           </div>
 
           <div class="form-group">
+            <label for="record-type-label">Свое название типа</label>
+            <input
+              type="text"
+              id="record-type-label"
+              class="input-control"
+              list="record-type-presets"
+              placeholder="Например, аренда, рассрочка, кредитка"
+            >
+            <datalist id="record-type-presets">
+              <option value="Аренда"></option>
+              <option value="Рассрочка"></option>
+              <option value="Кредитная карта"></option>
+              <option value="Займ у друга"></option>
+              <option value="Личный кредит"></option>
+              <option value="Коммунальные платежи"></option>
+            </datalist>
+            <small class="form-hint">Можно оставить пустым, тогда подставится тип по умолчанию.</small>
+          </div>
+
+          <div class="form-group">
             <label for="record-initial">Начальная сумма (€)</label>
             <input type="number" id="record-initial" class="input-control" min="0" placeholder="0" required>
           </div>
