@@ -349,33 +349,18 @@
           </div>
           
           <div class="form-group">
-            <label for="record-type">Тип обязательства</label>
-            <select id="record-type" class="input-control" required>
-              <option value="my-debt">Мой долг (я должен)</option>
-              <option value="debt-to-me">Долг мне (мне должны)</option>
-              <option value="regular">Регулярное обязательство</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="record-type-label">Свое название типа</label>
+            <label for="record-type">Тип долга</label>
             <input
               type="text"
-              id="record-type-label"
+              id="record-type"
               class="input-control"
-              list="record-type-presets"
               placeholder="Например, аренда, рассрочка, кредитка"
+              required
             >
-            <datalist id="record-type-presets">
-              <option value="Аренда"></option>
-              <option value="Рассрочка"></option>
-              <option value="Кредитная карта"></option>
-              <option value="Займ у друга"></option>
-              <option value="Личный кредит"></option>
-              <option value="Коммунальные платежи"></option>
-            </datalist>
-            <small class="form-hint">Можно оставить пустым, тогда подставится тип по умолчанию.</small>
+            <small class="form-hint">Тут пишите свой тип долга. Никакого списка выбора не будет.</small>
           </div>
+
+          <input type="hidden" id="record-category" value="my-debt">
 
           <div class="form-group">
             <label for="record-initial">Начальная сумма (€)</label>
