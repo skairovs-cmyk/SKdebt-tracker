@@ -34,7 +34,12 @@ const state = {
   currentProofIncomeId: null,
   recordsUnsubscribe: null,
   settingsUnsubscribe: null,
-  incomesUnsubscribe: null
+  incomesUnsubscribe: null,
+  sorting: {
+    records: { key: 'name', direction: 'asc' },
+    incomes: { key: 'name', direction: 'asc' },
+    history: { key: 'date', direction: 'desc' }
+  }
 };
 
 // --- MODAL UTILITIES ---
@@ -50,10 +55,192 @@ function icon(name) {
   return `<svg class="ui-icon" aria-hidden="true"><use href="#icon-${name}"></use></svg>`;
 }
 
+const DEFAULT_DESC_SORT_KEYS = new Set(['amount', 'balance', 'initialAmount', 'date', 'takenDate', 'closedDate', 'proof']);
+const RECORD_TYPE_ORDER = { 'my-debt': 0, 'debt-to-me': 1, 'regular': 2 };
+const STATUS_ORDER = { 'Active': 0, 'Closed': 1 };
+const INCOME_FREQUENCY_ORDER = { 'monthly': 0, 'weekly': 1, 'once': 2 };
+
+function getDefaultSortDirection(key) {
+  return DEFAULT_DESC_SORT_KEYS.has(key) ? 'desc' : 'asc';
+}
+
+function normalizeTextSort(value) {
+  return String(value ?? '').toLocaleLowerCase('ru-RU');
+}
+
+function parseDateSort(value) {
+  if (!value) {
+    return { empty: true, value: 0 };
+  }
+
+  const ts = Date.parse(`${value}T00:00:00`);
+  if (Number.isNaN(ts)) {
+    return { empty: true, value: 0 };
+  }
+
+  return { empty: false, value: ts };
+}
+
+function compareSortValues(left, right, direction) {
+  if (left.empty && right.empty) return 0;
+  if (left.empty) return 1;
+  if (right.empty) return -1;
+
+  if (left.value < right.value) return direction === 'asc' ? -1 : 1;
+  if (left.value > right.value) return direction === 'asc' ? 1 : -1;
+  return 0;
+}
+
+function getRecordColumnType(key) {
+  if (key === 'initialAmount' || key === 'balance') return 'number';
+  if (key === 'takenDate' || key === 'closedDate') return 'date';
+  if (key === 'type') return 'record-type';
+  if (key === 'status') return 'status';
+  const custom = state.customColumns.find((col) => col.key === key);
+  return custom ? custom.type : 'text';
+}
+
+function getRecordSortValue(record, key) {
+  if (key === 'name') return { empty: !record.name, value: normalizeTextSort(record.name) };
+  if (key === 'type') {
+    return { empty: false, value: RECORD_TYPE_ORDER[record.type] ?? 99 };
+  }
+  if (key === 'initialAmount') {
+    return { empty: record.initialAmount === undefined || record.initialAmount === null || record.initialAmount === '', value: Number(record.initialAmount) || 0 };
+  }
+  if (key === 'balance') {
+    return { empty: record.balance === undefined || record.balance === null || record.balance === '', value: Number(record.balance) || 0 };
+  }
+  if (key === 'status') {
+    return { empty: false, value: STATUS_ORDER[record.status] ?? 99 };
+  }
+  if (key === 'takenDate' || key === 'closedDate') {
+    return parseDateSort(record[key]);
+  }
+
+  const col = state.customColumns.find((item) => item.key === key);
+  if (col) {
+    const value = record[key];
+    if (value === undefined || value === null || value === '') {
+      return { empty: true, value: 0 };
+    }
+    if (col.type === 'number') return { empty: false, value: Number(value) || 0 };
+    if (col.type === 'date') return parseDateSort(value);
+    return { empty: false, value: normalizeTextSort(value) };
+  }
+
+  const value = record[key];
+  if (value === undefined || value === null || value === '') {
+    return { empty: true, value: '' };
+  }
+  return { empty: false, value: normalizeTextSort(value) };
+}
+
+function sortRecords(records) {
+  const { key, direction } = state.sorting.records;
+  return [...records].sort((a, b) => compareSortValues(getRecordSortValue(a, key), getRecordSortValue(b, key), direction));
+}
+
+function getIncomeSortValue(income, key) {
+  if (key === 'name') return { empty: !income.name, value: normalizeTextSort(income.name) };
+  if (key === 'amount') return { empty: income.amount === undefined || income.amount === null || income.amount === '', value: Number(income.amount) || 0 };
+  if (key === 'frequency') return { empty: false, value: INCOME_FREQUENCY_ORDER[income.frequency] ?? 99 };
+  if (key === 'date') return parseDateSort(income.date);
+
+  const value = income[key];
+  if (value === undefined || value === null || value === '') {
+    return { empty: true, value: '' };
+  }
+  return { empty: false, value: normalizeTextSort(value) };
+}
+
+function sortIncomes(incomes) {
+  const { key, direction } = state.sorting.incomes;
+  return [...incomes].sort((a, b) => compareSortValues(getIncomeSortValue(a, key), getIncomeSortValue(b, key), direction));
+}
+
+function getTransactionSortValue(tx, key) {
+  if (key === 'type') return { empty: !tx.category, value: normalizeTextSort(tx.category) };
+  if (key === 'date') return parseDateSort(tx.date);
+  if (key === 'description') return { empty: !tx.description, value: normalizeTextSort(tx.description) };
+  if (key === 'category') return { empty: !tx.category, value: normalizeTextSort(tx.category) };
+  if (key === 'amount') return { empty: tx.amount === undefined || tx.amount === null || tx.amount === '', value: Number(tx.amount) || 0 };
+  if (key === 'proof') return { empty: false, value: tx.proofUrl ? 1 : 0 };
+  return { empty: true, value: '' };
+}
+
+function sortTransactions(transactions) {
+  const { key, direction } = state.sorting.history;
+  return [...transactions].sort((a, b) => compareSortValues(getTransactionSortValue(a, key), getTransactionSortValue(b, key), direction));
+}
+
+function setSort(table, key) {
+  const current = state.sorting[table] || { key, direction: 'asc' };
+  const direction = current.key === key ? (current.direction === 'asc' ? 'desc' : 'asc') : getDefaultSortDirection(key);
+  state.sorting[table] = { key, direction };
+
+  if (table === 'records') {
+    renderHeaders();
+    renderRecords();
+    return;
+  }
+
+  if (table === 'incomes') {
+    renderIncomesHeaders();
+    renderIncomes();
+    return;
+  }
+
+  if (table === 'history') {
+    renderGlobalHistoryHeaders();
+    renderGlobalHistory();
+    if (!document.getElementById('history-modal').classList.contains('hidden')) {
+      renderHistoryModal();
+    }
+  }
+}
+
+function createSortHeaderButton(table, key, label) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  const sortState = state.sorting[table] || {};
+  const isActive = sortState.key === key;
+  const indicator = isActive ? (sortState.direction === 'asc' ? '↑' : '↓') : '↕';
+  button.className = `sort-header${isActive ? ' active' : ''}`;
+  button.innerHTML = `<span class="sort-label">${label}</span><span class="sort-indicator">${indicator}</span>`;
+  button.setAttribute('aria-label', `Сортировать по столбцу ${label}`);
+  button.onclick = () => setSort(table, key);
+  return button;
+}
+
+function buildSortHeaderCell(table, key, label, options = {}) {
+  const th = document.createElement('th');
+  th.className = 'sortable-header';
+
+  if (options.width) {
+    th.style.width = options.width;
+  }
+  if (options.align) {
+    th.style.textAlign = options.align;
+  }
+
+  if (options.customColumn) {
+    th.style.position = 'relative';
+    th.style.paddingRight = '2.25rem';
+  }
+
+  th.appendChild(createSortHeaderButton(table, key, label));
+  return th;
+}
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
   setupUIEventListeners();
+  renderHeaders();
+  renderIncomesHeaders();
+  renderGlobalHistoryHeaders();
+  renderHistoryModalHeaders();
 });
 
 const defaultFirebaseConfig = {
@@ -337,33 +524,26 @@ function renderHeaders() {
 
   // Standard Columns
   const baseHeaders = [
-    { label: 'Название' },
-    { label: 'Тип' },
-    { label: 'Сумма' },
-    { label: 'Остаток' },
-    { label: 'Статус' },
-    { label: 'Взял' },
-    { label: 'Закрыл' }
+    { label: 'Название', key: 'name' },
+    { label: 'Тип', key: 'type' },
+    { label: 'Сумма', key: 'initialAmount' },
+    { label: 'Остаток', key: 'balance' },
+    { label: 'Статус', key: 'status' },
+    { label: 'Взял', key: 'takenDate' },
+    { label: 'Закрыл', key: 'closedDate' }
   ];
 
   baseHeaders.forEach(h => {
-    const th = document.createElement('th');
-    th.textContent = h.label;
-    tr.appendChild(th);
+    tr.appendChild(buildSortHeaderCell('records', h.key, h.label));
   });
 
   // Custom Columns
   state.customColumns.forEach(col => {
-    const th = document.createElement('th');
-    th.style.position = 'relative';
-    th.style.paddingRight = '2.2rem';
-    
-    const labelSpan = document.createElement('span');
-    labelSpan.textContent = col.label;
-    th.appendChild(labelSpan);
+    const th = buildSortHeaderCell('records', col.key, col.label, { customColumn: true });
 
     const deleteBtn = document.createElement('button');
     deleteBtn.innerHTML = '&times;';
+    deleteBtn.type = 'button';
     deleteBtn.style.position = 'absolute';
     deleteBtn.style.right = '0.6rem';
     deleteBtn.style.top = '50%';
@@ -389,7 +569,72 @@ function renderHeaders() {
 
   // Actions Column
   const thActions = document.createElement('th');
+  thActions.textContent = 'Действия';
   thActions.style.width = '90px';
+  thActions.style.textAlign = 'center';
+  tr.appendChild(thActions);
+}
+
+function renderIncomesHeaders() {
+  const tr = document.getElementById('incomes-table-headers');
+  if (!tr) return;
+  tr.innerHTML = '';
+
+  const headers = [
+    { label: 'Источник', key: 'name' },
+    { label: 'Сумма', key: 'amount' },
+    { label: 'Периодичность', key: 'frequency' },
+    { label: 'Дата', key: 'date' }
+  ];
+
+  headers.forEach((header) => {
+    tr.appendChild(buildSortHeaderCell('incomes', header.key, header.label));
+  });
+
+  const thActions = document.createElement('th');
+  thActions.textContent = 'Действия';
+  thActions.style.width = '70px';
+  thActions.style.textAlign = 'center';
+  tr.appendChild(thActions);
+}
+
+function renderGlobalHistoryHeaders() {
+  const tr = document.getElementById('global-history-headers');
+  if (!tr) return;
+  tr.innerHTML = '';
+
+  const headers = [
+    { label: 'Дата', key: 'date' },
+    { label: 'Описание', key: 'description' },
+    { label: 'Категория', key: 'category' },
+    { label: 'Сумма', key: 'amount' }
+  ];
+
+  headers.forEach((header) => {
+    tr.appendChild(buildSortHeaderCell('history', header.key, header.label));
+  });
+}
+
+function renderHistoryModalHeaders() {
+  const tr = document.getElementById('history-table-headers');
+  if (!tr) return;
+  tr.innerHTML = '';
+
+  const headers = [
+    { label: 'Тип', key: 'type' },
+    { label: 'Дата', key: 'date' },
+    { label: 'Описание', key: 'description' },
+    { label: 'Сумма', key: 'amount' },
+    { label: 'Доказательство', key: 'proof' }
+  ];
+
+  headers.forEach((header) => {
+    tr.appendChild(buildSortHeaderCell('history', header.key, header.label));
+  });
+
+  const thActions = document.createElement('th');
+  thActions.textContent = 'Действия';
+  thActions.style.width = '70px';
   thActions.style.textAlign = 'center';
   tr.appendChild(thActions);
 }
@@ -398,8 +643,9 @@ function renderHeaders() {
 function renderRecords() {
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = '';
+  const records = sortRecords(state.records);
 
-  if (state.records.length === 0) {
+  if (records.length === 0) {
     const tr = document.createElement('tr');
     const colsCount = 8 + state.customColumns.length;
     tr.innerHTML = `<td colspan="${colsCount}" style="text-align: center; color: var(--text-secondary); padding: 2.5rem;">Нет активных или закрытых обязательств. Добавьте первую запись!</td>`;
@@ -407,7 +653,7 @@ function renderRecords() {
     return;
   }
 
-  state.records.forEach((rec) => {
+  records.forEach((rec) => {
     const tr = document.createElement('tr');
 
     // 1. Name
@@ -949,102 +1195,80 @@ window.openIncomeProofModal = function(incomeId) {
 
 
 
-// Open unified history modal
-window.openHistoryModal = function() {
+function renderHistoryModal() {
   const tbody = document.getElementById('history-table-body');
   if (!tbody) return;
   tbody.innerHTML = '';
-  const allTransactions = [];
-  // Records payments
-  state.records.forEach(rec => {
-    if (Array.isArray(rec.history)) {
-      rec.history.forEach(tx => {
-        const isOutflow = rec.type === 'my-debt' || rec.type === 'regular';
-        allTransactions.push({
-          date: tx.date,
-          description: isOutflow ? `Выплата по долгу: ${rec.name}` : `Получен платеж: ${rec.name}`,
-          category: isOutflow ? 'Расход (Списание)' : 'Возврат долга',
-          amount: tx.amount,
-          isPositive: !isOutflow,
-          proofUrl: rec.proofUrl || null
-        });
-      });
-    }
-  });
-  // Incomes
-  state.incomes.forEach(inc => {
-    if (inc.date) {
-      let freqLabel = 'Разовый доход';
-      if (inc.frequency === 'monthly') freqLabel = 'Ежемесячный доход';
-      else if (inc.frequency === 'weekly') freqLabel = 'Еженедельный доход';
-      allTransactions.push({
-        date: inc.date,
-        description: `Доход: ${inc.name}`,
-        category: freqLabel,
-        amount: inc.amount,
-        isPositive: true,
-        proofUrl: null
-      });
-    }
-  });
-    // Compute and display totals for income and expense
-    const totalsDiv = document.getElementById('history-totals');
-    if (totalsDiv) {
-      const totalIncome = allTransactions.reduce((sum, tx) => tx.isPositive ? sum + tx.amount : sum, 0);
-      const totalExpense = allTransactions.reduce((sum, tx) => !tx.isPositive ? sum + tx.amount : sum, 0);
-      const net = totalIncome - totalExpense;
-      totalsDiv.innerHTML = `
-        <div style="margin-top:1rem; font-weight:600;">
-          <span>Итого доход: +${totalIncome.toLocaleString('de-DE')} €</span> |
-          <span>Итого расход: -${totalExpense.toLocaleString('de-DE')} €</span> |
-          <span>Чистый результат: ${net >= 0 ? '+' : '-'}${Math.abs(net).toLocaleString('de-DE')} €</span>
-        </div>`;
-    }
 
-  // Sort descending by date
-  allTransactions.sort((a, b) => b.date.localeCompare(a.date));
-  if (allTransactions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-secondary);padding:2.5rem;">История транзакций пока пуста.</td></tr>`;
-  } else {
-    allTransactions.forEach(tx => {
-      const tr = document.createElement('tr');
-      const tdDate = document.createElement('td');
-      const parts = tx.date.split('-');
-      tdDate.textContent = parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : tx.date;
-      tr.appendChild(tdDate);
-      const tdDesc = document.createElement('td');
-      tdDesc.textContent = tx.description;
-      tdDesc.style.fontWeight = '500';
-      tr.appendChild(tdDesc);
-      const tdCat = document.createElement('td');
-      const badgeClass = tx.isPositive ? 'badge-regular' : (tx.category.includes('Списание') ? 'badge-my-debt' : 'badge-debt-to-me');
-      tdCat.innerHTML = `<span class="badge ${badgeClass}">${tx.category}</span>`;
-      tr.appendChild(tdCat);
-      const tdAmount = document.createElement('td');
-      tdAmount.textContent = `${tx.isPositive ? '+' : '-'}${tx.amount.toLocaleString('de-DE')} €`;
-      tdAmount.style.fontWeight = '600';
-      tdAmount.classList.add(tx.isPositive ? 'text-success' : 'text-danger');
-      tr.appendChild(tdAmount);
-      const tdProof = document.createElement('td');
-      if (tx.proofUrl) {
-        const a = document.createElement('a');
-        a.href = tx.proofUrl;
-        a.target = '_blank';
-        a.className = 'proof-link';
-        a.title = 'Открыть доказательство';
-        a.innerHTML = icon('paperclip');
-        tdProof.appendChild(a);
-      } else {
-        tdProof.textContent = '—';
-      }
-      tr.appendChild(tdProof);
-      // Actions column with delete button
-      const tdActions = document.createElement('td');
-      tdActions.innerHTML = `<button class="btn-row-action delete" title="Удалить" aria-label="Удалить" onclick="deleteHistoryRow(this)">${icon('trash')}</button>`;
-      tr.appendChild(tdActions);
-      tbody.appendChild(tr);
-    });
+  renderHistoryModalHeaders();
+
+  const allTransactions = sortTransactions(buildTransactions());
+  const totalsDiv = document.getElementById('history-totals');
+  if (totalsDiv) {
+    const totalIncome = allTransactions.reduce((sum, tx) => tx.isPositive ? sum + Number(tx.amount || 0) : sum, 0);
+    const totalExpense = allTransactions.reduce((sum, tx) => !tx.isPositive ? sum + Number(tx.amount || 0) : sum, 0);
+    const net = totalIncome - totalExpense;
+    totalsDiv.innerHTML = `
+      <div style="margin-top:1rem; font-weight:600;">
+        <span>Итого доход: +${totalIncome.toLocaleString('de-DE')} €</span> |
+        <span>Итого расход: -${totalExpense.toLocaleString('de-DE')} €</span> |
+        <span>Чистый результат: ${net >= 0 ? '+' : '-'}${Math.abs(net).toLocaleString('de-DE')} €</span>
+      </div>`;
   }
+
+  if (allTransactions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:2.5rem;">История транзакций пока пуста.</td></tr>`;
+    return;
+  }
+
+  allTransactions.forEach((tx) => {
+    const tr = document.createElement('tr');
+
+    const tdType = document.createElement('td');
+    tdType.innerHTML = `<span class="badge ${tx.isPositive ? 'badge-regular' : 'badge-my-debt'}">${tx.type}</span>`;
+    tr.appendChild(tdType);
+
+    const tdDate = document.createElement('td');
+    const parts = tx.date.split('-');
+    tdDate.textContent = parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : tx.date;
+    tr.appendChild(tdDate);
+
+    const tdDesc = document.createElement('td');
+    tdDesc.textContent = tx.description;
+    tdDesc.style.fontWeight = '500';
+    tr.appendChild(tdDesc);
+
+    const tdAmount = document.createElement('td');
+    tdAmount.textContent = `${tx.isPositive ? '+' : '-'}${Number(tx.amount || 0).toLocaleString('de-DE')} €`;
+    tdAmount.style.fontWeight = '600';
+    tdAmount.classList.add(tx.isPositive ? 'text-success' : 'text-danger');
+    tr.appendChild(tdAmount);
+
+    const tdProof = document.createElement('td');
+    if (tx.proofUrl) {
+      const a = document.createElement('a');
+      a.href = tx.proofUrl;
+      a.target = '_blank';
+      a.className = 'proof-link';
+      a.title = 'Открыть доказательство';
+      a.innerHTML = icon('paperclip');
+      tdProof.appendChild(a);
+    } else {
+      tdProof.textContent = '—';
+    }
+    tr.appendChild(tdProof);
+
+    const tdActions = document.createElement('td');
+    tdActions.innerHTML = `<button class="btn-row-action delete" title="Удалить" aria-label="Удалить" onclick="deleteHistoryRow(this)">${icon('trash')}</button>`;
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  });
+}
+
+// Open unified history modal
+window.openHistoryModal = function() {
+  renderHistoryModal();
   window.openModal('history-modal');
 };
 
@@ -1079,6 +1303,10 @@ window.deleteCustomColumn = async function(columnKey, columnLabel) {
   if (confirm(`Вы уверены, что хотите удалить столбец "${columnLabel}"? Данные этого столбца перестанут отображаться.`)) {
     if (!state.currentUser) return;
 
+    if (state.sorting.records.key === columnKey) {
+      state.sorting.records = { key: 'name', direction: 'asc' };
+    }
+
     const updatedCols = state.customColumns.filter(col => col.key !== columnKey);
 
     try {
@@ -1092,51 +1320,58 @@ window.deleteCustomColumn = async function(columnKey, columnLabel) {
   }
 };
 
-// Render global payment and write-off history
-function renderGlobalHistory() {
-  const tbody = document.getElementById('global-history-body');
-  if (!tbody) return;
-  tbody.innerHTML = '';
+function buildTransactions() {
+  const allTransactions = [];
 
-  let allTransactions = [];
-
-  // 1. Gather payoff history from records
-  state.records.forEach(rec => {
+  state.records.forEach((rec) => {
     if (Array.isArray(rec.history)) {
-      rec.history.forEach(tx => {
+      rec.history.forEach((tx) => {
         const isOutflow = rec.type === 'my-debt' || rec.type === 'regular';
         allTransactions.push({
+          type: isOutflow ? 'Расход (Списание)' : 'Возврат долга',
           date: tx.date,
           description: isOutflow ? `Выплата по долгу: ${rec.name}` : `Получен платеж: ${rec.name}`,
           category: isOutflow ? 'Расход (Списание)' : 'Возврат долга',
           categoryClass: isOutflow ? 'badge-my-debt' : 'badge-debt-to-me',
           amount: tx.amount,
-          isPositive: !isOutflow
+          isPositive: !isOutflow,
+          proofUrl: rec.proofUrl || null
         });
       });
     }
   });
 
-  // 2. Gather income logs from incomes
-  state.incomes.forEach(inc => {
+  state.incomes.forEach((inc) => {
     if (inc.date) {
       let freqLabel = 'Разовый доход';
       if (inc.frequency === 'monthly') freqLabel = 'Ежемесячный доход';
       else if (inc.frequency === 'weekly') freqLabel = 'Еженедельный доход';
 
       allTransactions.push({
+        type: 'Доход',
         date: inc.date,
         description: `Доход: ${inc.name}`,
         category: freqLabel,
         categoryClass: 'badge-regular',
         amount: inc.amount,
-        isPositive: true
+        isPositive: true,
+        proofUrl: null
       });
     }
   });
 
-  // Sort by date descending
-  allTransactions.sort((a, b) => b.date.localeCompare(a.date));
+  return allTransactions;
+}
+
+// Render global payment and write-off history
+function renderGlobalHistory() {
+  const tbody = document.getElementById('global-history-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  renderGlobalHistoryHeaders();
+
+  const allTransactions = sortTransactions(buildTransactions());
 
   if (allTransactions.length === 0) {
     tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2.5rem;">История транзакций пока пуста.</td></tr>`;
@@ -1179,15 +1414,18 @@ function renderIncomes() {
   const tbody = document.getElementById('incomes-table-body');
   if (!tbody) return;
   tbody.innerHTML = '';
+  const incomes = sortIncomes(state.incomes);
 
-  if (state.incomes.length === 0) {
+  renderIncomesHeaders();
+
+  if (incomes.length === 0) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2.5rem;">Нет зарегистрированных источников дохода. Добавьте первый!</td>`;
     tbody.appendChild(tr);
     return;
   }
 
-  state.incomes.forEach((inc) => {
+  incomes.forEach((inc) => {
     const tr = document.createElement('tr');
 
     // 1. Name

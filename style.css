@@ -531,6 +531,52 @@ th {
   letter-spacing: 0.04em;
 }
 
+.sortable-header {
+  position: relative;
+}
+
+.sort-header {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sort-header:hover {
+  color: var(--text-primary);
+}
+
+.sort-header.active {
+  color: var(--text-primary);
+}
+
+.sort-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sort-indicator {
+  font-size: 0.8rem;
+  color: var(--primary);
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.sortable-header .sort-header {
+  min-height: 1.1rem;
+}
+
 tr:last-child td {
   border-bottom: none;
 }
