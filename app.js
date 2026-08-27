@@ -69,12 +69,12 @@ function getDefaultSortDirection(key) {
 }
 
 function getRecordTypeDisplayLabel(record) {
-  const customLabel = String(record?.typeLabel ?? record?.type ?? '').trim();
+  const customLabel = String(record?.typeLabel ?? '').trim();
   if (customLabel) {
     return customLabel;
   }
 
-  return RECORD_TYPE_LABELS[record?.type] || '';
+  return RECORD_TYPE_LABELS[record?.type] || record?.type || '';
 }
 
 function normalizeTextSort(value) {
@@ -331,37 +331,39 @@ function cleanupUserSession() {
   state.incomesUnsubscribe = null;
 }
 
-// --- DATABASE SEEDER FOR USER DEBTS ---
-async function seedPersonalDebts(userId) {
-  if (localStorage.getItem(`seeded_debts_${userId}`) === 'true') {
+async function ensureSharedSettings(userId) {
+  const sharedSettingsRef = doc(state.db, 'settings', 'shared');
+  const sharedSnap = await getDoc(sharedSettingsRef);
+  if (sharedSnap.exists() && Array.isArray(sharedSnap.data()?.customColumns)) {
     return;
   }
-  
-  const debtsToSeed = [
-    { name: "Artur (Private loan)", type: "my-debt", initialAmount: 1000, balance: 1000, status: "Active", history: [], userId: userId },
-    { name: "Kostik K (Private loan)", type: "my-debt", initialAmount: 1000, balance: 1000, status: "Active", history: [], userId: userId },
-    { name: "Kostik R (Private loan)", type: "my-debt", initialAmount: 1000, balance: 1000, status: "Active", history: [], userId: userId },
-    { name: "Nastya (Nastya Mini-Credit)", type: "my-debt", initialAmount: 500, balance: 500, status: "Active", history: [], userId: userId }
-  ];
 
-  try {
-    for (const debt of debtsToSeed) {
-      debt.createdAt = new Date().toISOString();
-      debt.updatedAt = new Date().toISOString();
-      await addDoc(collection(state.db, 'records'), debt);
-    }
-    localStorage.setItem(`seeded_debts_${userId}`, 'true');
-    console.log("Successfully seeded personal debts.");
-  } catch (err) {
-    console.error("Error seeding debts:", err);
+  const userSettingsRef = doc(state.db, 'settings', userId);
+  const userSnap = await getDoc(userSettingsRef);
+  if (!userSnap.exists()) {
+    return;
   }
+
+  const userColumns = userSnap.data()?.customColumns;
+  if (!Array.isArray(userColumns) || userColumns.length === 0) {
+    return;
+  }
+
+  await setDoc(sharedSettingsRef, {
+    customColumns: userColumns,
+    migratedFrom: userId,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
 }
 
 // --- REAL-TIME SYNC ENGINE ---
 function startRealtimeSync(userId) {
-  seedPersonalDebts(userId);
+  ensureSharedSettings(userId).catch((error) => {
+    console.error('Error ensuring shared settings:', error);
+  });
+
   // 1. Sync custom columns settings
-  const settingsDocRef = doc(state.db, 'settings', userId);
+  const settingsDocRef = doc(state.db, 'settings', 'shared');
   state.settingsUnsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
     if (docSnap.exists() && docSnap.data().customColumns) {
       state.customColumns = docSnap.data().customColumns;
@@ -375,10 +377,7 @@ function startRealtimeSync(userId) {
   });
 
   // 2. Sync financial records
-  const recordsQuery = query(
-    collection(state.db, 'records'),
-    where('userId', '==', userId)
-  );
+  const recordsQuery = collection(state.db, 'records');
 
   state.recordsUnsubscribe = onSnapshot(recordsQuery, (snapshot) => {
     state.records = [];
@@ -401,10 +400,7 @@ function startRealtimeSync(userId) {
   });
 
   // 3. Sync incomes
-  const incomesQuery = query(
-    collection(state.db, 'incomes'),
-    where('userId', '==', userId)
-  );
+  const incomesQuery = collection(state.db, 'incomes');
 
   state.incomesUnsubscribe = onSnapshot(incomesQuery, (snapshot) => {
     state.incomes = [];
@@ -976,7 +972,7 @@ function setupUIEventListeners() {
     const updatedCols = [...state.customColumns, newCol];
 
     try {
-      await setDoc(doc(state.db, 'settings', state.currentUser.uid), {
+      await setDoc(doc(state.db, 'settings', 'shared'), {
         customColumns: updatedCols
       }, { merge: true });
       
@@ -1320,7 +1316,7 @@ window.deleteCustomColumn = async function(columnKey, columnLabel) {
     const updatedCols = state.customColumns.filter(col => col.key !== columnKey);
 
     try {
-      await setDoc(doc(state.db, 'settings', state.currentUser.uid), {
+      await setDoc(doc(state.db, 'settings', 'shared'), {
         customColumns: updatedCols
       }, { merge: true });
     } catch (error) {
